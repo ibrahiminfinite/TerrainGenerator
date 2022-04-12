@@ -5,10 +5,9 @@
 #include <vector>
 #include <random>
 
-#define UNUSED 143255
-
 enum struct TerrainType
 {
+    Inavlid=0,
     Hills,
     Steps,
     Plane
@@ -17,20 +16,20 @@ enum struct TerrainType
 
 struct TerrainConfig
 {
-    TerrainType terrainType;
+    TerrainType terrainType = TerrainType::Inavlid;
 
-    float xSize, ySize; // in meters
-    float resolution; // size of a square in meters
+    float xSize, ySize = -1; // in meters
+    float resolution = -1; // size of a square in meters
 
     // To be used with hill terrain
-    float roughenss = UNUSED;
-    float amplitude = UNUSED;
-    float frequency = UNUSED;
-    int numOctaves = UNUSED;
+    float roughenss = -1;
+    float amplitude = -1;
+    float frequency = -1;
+    int numOctaves = -1;
 
     // To be used with steps and stairs
-    float stepWidth = UNUSED;
-    float stepHeight = UNUSED;
+    float stepWidth = -1;
+    float stepHeight = -1;
 };
 
 
