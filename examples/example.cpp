@@ -10,7 +10,7 @@ int main()
     TerrainGenerator generator;
     TerrainConfig config;
 
-    config.terrainType = TerrainType::Plane;
+    config.terrainType = TerrainType::Hills;
     config.xSize = config.ySize = 8.0;
     config.resolution = 0.2;
     config.amplitude = 1.0;
