@@ -1,126 +1,247 @@
-
-#include "TerrainGenerator.h"
-#include "PerlinNoise.h"
+#include "TerrainGenerator.hpp"
 #include <math.h>
-#include <Eigen/Dense>
+
+
+using namespace  Eigen;
+using namespace Terrains;
 
 TerrainGenerator::TerrainGenerator()
 {
-    std::default_random_engine rd;
-    engine_ = std::mt19937(rd());
-    uniformDist_ = std::uniform_real_distribution<float>(0.0,1.0);
+
+    uniformDist_ = std::uniform_real_distribution<float>(0.0, 1.0);
 }
 
-Terrain TerrainGenerator::generate(const TerrainConfig& config)
+void TerrainGenerator::slopeTerrain(Eigen::MatrixXf &heights,
+                                    const TerrainConfig &config)
+{
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
+
+    VectorXf offsets;
+    offsets.resize(nVerticesX);
+    offsets.setZero();
+
+    float height = sin(config.slope * (3.1415 / 180));
+    for(int k = 0; k < nVerticesX; k++)
+        offsets(k) = (config.resolution*  k) * height;
+
+    if (!config.slopeX)
+        heights.rowwise() += offsets.transpose();
+    else
+        heights.colwise() += offsets;
+}
+
+void TerrainGenerator::toStdVec(const Eigen::MatrixXf &heights,
+                                const TerrainConfig &config,
+                                Terrain &terrain)
+{
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
+
+    int r, c = 0;
+    for(int idx = 0; idx < nVerticesX * nVerticesY; idx++)
+    {
+        r = idx / nVerticesX;
+        c = idx % nVerticesY;
+        terrain.heights.emplace_back(heights.row(r)[c]);
+    }
+}
+
+Terrain TerrainGenerator::generate(const TerrainConfig &config)
 {
 
     switch (config.terrainType)
     {
-        case TerrainType::Hills : return generateHills(config);
-        case TerrainType::Steps : return generateSteps(config);
-        case TerrainType::Plane : return generatePlane(config);
-                        default :  return Terrain();
+    case TerrainType::Hills:
+        return generateHills(config);
+    case TerrainType::Steps:
+        return generateSteps(config);
+    case TerrainType::Plane:
+        return generatePlane(config);
+    case TerrainType::Stairs:
+        return generateStairs(config);
+    default:
+        return Terrain();
     }
 }
 
-
-Terrain TerrainGenerator::generateHills(const TerrainConfig& config)
+Terrain TerrainGenerator::generatePlane(const TerrainConfig &config)
 {
-    // We need (nx + 1) * (ny+1) vertices for a grid of size (nx * ny)
-    size_t numVerticesX = (config.xSize / config.resolution) + 1;
-    size_t numVerticesY = (config.ySize / config.resolution) + 1;
-
-
-    PerlinNoise noiseGenerator;
-
     Terrain terrain;
-    float amp, freq, height{0};
 
-    for(int i = 0; i < numVerticesX; ++i)
-    {
-        for(int j = 0; j < numVerticesY; ++j)
-        {
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
 
-            height = 0;
-            // generate perlin noise based terrain
-            for (int k = 0; k < config.numOctaves; ++k)
-            {
-                amp = config.amplitude / pow(2, k);
-                freq = config.frequency * pow(2,k);
+    MatrixXf heights;
+    heights.resize(nVerticesX, nVerticesY);
+    heights.setZero();
 
+    if (config.slope != 0)
+        slopeTerrain(heights, config);
 
-                height += amp * noiseGenerator.noise(i * freq, j * freq, 0.1);
-            }
-
-            // TODO : add roughness here
-            height += config.roughenss * uniformDist_(engine_);
-            terrain.heights.emplace_back(height);
-        }
-    }
+    toStdVec(heights, config, terrain);
 
     terrain.config = config;
-
     return terrain;
 }
 
-
-Terrain TerrainGenerator::generatePlane(const TerrainConfig& config)
-{
-    // We need (nx + 1) * (ny+1) vertices for a grid of size (nx * ny)
-    size_t numVerticesX = (config.xSize / config.resolution) + 1;
-    size_t numVerticesY = (config.ySize / config.resolution) + 1;
-
-    Terrain terrain;
-
-    for(int i = 0; i < numVerticesX * numVerticesY; ++i)
-    {
-        terrain.heights.emplace_back(0.0);
-    }
-    terrain.config = config;
-
-    return  terrain;
-}
-
-
 Terrain TerrainGenerator::generateSteps(const TerrainConfig &config)
 {
-    // We need (nx + 1) * (ny+1) vertices for a grid of size (nx * ny)
-    const size_t nVerticesX = int(config.xSize / config.resolution) + 1;
-    const size_t nVerticesY = int(config.ySize / config.resolution) + 1;
+    Terrain terrain;
 
-    // Calcluate the no: of segments of `stepWidth` that will fit in the terrain size
-    int nSegmentsX = int(config.xSize / config.stepWidth);
-    int nSegmentsY = int(config.ySize / config.stepWidth);
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
 
-    // calculate number of vertices needed for each segment
-    int VerticesPerSegment = int(config.stepWidth / config.resolution);
+    int nSegmentsX = (config.xSize / config.stepWidth);
+    int nSegmentsY = (config.ySize / config.stepWidth);
 
-    // Using eigen to avoid explicit looping to set heights in a std::vector<>
-    // The values for full square can be set using block
-    std::vector<float> heights;
-    heights.resize(nVerticesX * nVerticesY);
-    // Using map instead of Matrix eliminates the need to convert from eigen matrix
-    // to std::vector as Map uses in place operations
-    Eigen::Map<Eigen::Matrix<float,  -1, -1>> hmap(heights.data(), nVerticesX, nVerticesY);
-    hmap.setZero();
+    int VerticesPerSegment = (config.stepWidth / config.resolution);
 
+    MatrixXf heights;
+    heights.resize(nVerticesX, nVerticesY);
+    heights.setZero();
 
-    // Loop through the squares with (VerticesPerSegment * VerticesPerSegment) vertices each
-    float height;
-    for(int i = 0; i < nSegmentsX; ++i)
+    std::default_random_engine rd;
+    auto randomGen = std::mt19937(rd());
+
+    if (config.seed != -1)
     {
-        for(int j = 0; j <nSegmentsY; ++j)
+        rd = std::default_random_engine(config.seed);
+        randomGen = std::mt19937(rd());
+    }
+
+    float h = 0;
+    for (int64_t i = 0; i < nSegmentsX; ++i)
+    {
+        for (int64_t j = 0; j < nSegmentsY; ++j)
         {
             // set random height in range (0, 0.5)
-            height = uniformDist_(engine_) * config.stepHeight;
-            hmap.block(i * VerticesPerSegment, j * VerticesPerSegment,
-                          VerticesPerSegment, VerticesPerSegment).setConstant(height);
+            h = uniformDist_(randomGen) * config.stepHeight;
+            heights.block(i * VerticesPerSegment, j * VerticesPerSegment,
+                          VerticesPerSegment, VerticesPerSegment)
+                .setConstant(static_cast<float>(h));
         }
     }
 
-    Terrain terrain;
-    terrain.heights = heights;
-    terrain.config = config;
+    if (config.slope != 0)
+        slopeTerrain(heights, config);
 
+    toStdVec(heights, config, terrain);
+
+    terrain.config = config;
+    return terrain;
+
+}
+
+Terrain TerrainGenerator::generateHills(const TerrainConfig &config)
+{
+    Terrain terrain;
+
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
+
+    MatrixXf heights;
+    heights.resize(nVerticesX, nVerticesY);
+    heights.setZero();
+
+    PerlinNoise noiseGenerator;
+    std::default_random_engine rd;
+    auto randomGen = std::mt19937(rd());
+
+    if (config.seed != -1)
+    {
+        noiseGenerator = PerlinNoise(config.seed);
+        rd = std::default_random_engine(config.seed);
+        randomGen = std::mt19937(rd());
+    }
+
+    int i,j = 0;
+    for(int idx = 0; idx < nVerticesY * nVerticesY; idx++)
+    {
+        i = idx / nVerticesX;
+        j = idx % nVerticesY;
+        double amp, freq = 0;
+        float height = 0;
+
+        for(int nOctave = 0; nOctave < config.numOctaves; nOctave++)
+        {
+            amp = config.amplitude / pow(2, nOctave);
+            freq = config.frequency * pow(2, nOctave);
+
+            height += amp * noiseGenerator.noise(i * freq, j * freq, 0.1);
+        }
+        height += config.roughness * uniformDist_(randomGen);
+
+        heights.row(i)[j] = height;
+    }
+
+    if (config.slope != 0)
+        slopeTerrain(heights, config);
+
+    toStdVec(heights, config, terrain);
+
+    terrain.config = config;
+    return terrain;
+
+}
+
+Terrain TerrainGenerator::generateStairs(const TerrainConfig &config)
+{
+    Terrain terrain;
+
+    int nVerticesX = (config.xSize / config.resolution) + 1;
+    int nVerticesY = (config.ySize / config.resolution) + 1;
+
+    int nStairs = (config.xSize / config.stepWidth);
+    int nVerticesPerStair =(config.stepWidth/config.resolution);
+
+
+    MatrixXf heights;
+    heights.resize(nVerticesX, nVerticesY);
+    heights.setZero();
+
+
+    std::default_random_engine rd;
+    auto randomGen = std::mt19937(rd());
+
+    if (config.seed != -1)
+    {
+        rd = std::default_random_engine(config.seed);
+        randomGen = std::mt19937(rd());
+    }
+
+    float h = 0;
+    if (config.stepHeight == -1)
+    {
+
+        for(int stair = 0; stair < nStairs; stair++)
+        {
+            h += 0.05 + uniformDist_(randomGen) * config.stepHeight;
+            heights.block(stair * nVerticesPerStair, 0,
+                          nVerticesPerStair,
+                          nVerticesY).setConstant(h);
+        }
+
+        heights.block(nStairs * nVerticesPerStair, 0,
+                      (nVerticesX - (nStairs * nVerticesPerStair)),
+                      nVerticesY).setConstant(h);
+    }
+    else
+    {
+        for(int stair = 0; stair < nStairs; stair++)
+        {
+            h += config.stepHeight;
+            heights.block(stair * nVerticesPerStair, 0,
+                          nVerticesPerStair, nVerticesY).setConstant(h);
+        }
+
+        heights.block(nStairs * nVerticesPerStair, 0,
+                      (nVerticesX - (nStairs * nVerticesPerStair)),
+                      nVerticesY).setConstant(h);
+    }
+
+    toStdVec(heights, config, terrain);
+
+    terrain.config = config;
     return terrain;
 }
